@@ -26,8 +26,10 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import dotenv from 'dotenv';
 import { FoundryClient } from './foundry/client.js';
+import { WFRP4eClient } from './foundry/wfrp4e-client.js';
 import { DiagnosticsClient } from './diagnostics/client.js';
 import { DiagnosticSystem } from './utils/diagnostics.js';
+import { RAGService } from './rag/index.js';
 import { logger } from './utils/logger.js';
 import { config } from './config/index.js';
 import { getAllTools, getAllResources, routeToolRequest, routeResourceRequest } from './tools/index.js';
@@ -42,6 +44,8 @@ dotenv.config();
 class FoundryMCPServer {
   private server: Server;
   private foundryClient: FoundryClient;
+  private wfrp4eClient?: WFRP4eClient;
+  private ragService?: RAGService;
   private diagnosticsClient: DiagnosticsClient;
   private diagnosticSystem: DiagnosticSystem;
 
@@ -74,6 +78,24 @@ class FoundryMCPServer {
       retryAttempts: config.foundry.retryAttempts,
       retryDelay: config.foundry.retryDelay,
     });
+
+    // Initialize WFRP4eClient if REST module is enabled
+    if (config.foundry.useRestModule) {
+      logger.info('Initializing WFRP4e client with relay API');
+      this.wfrp4eClient = new WFRP4eClient({
+        relayUrl: config.foundry.url,
+        apiKey: config.foundry.apiKey || '',
+        clientId: config.foundry.clientId || '',
+        timeout: config.foundry.timeout,
+      });
+    }
+
+    // Initialize RAG service if ChromaDB URL is configured
+    const chromaDbUrl = process.env.CHROMADB_URL;
+    if (chromaDbUrl) {
+      logger.info('Initializing RAG service with ChromaDB');
+      this.ragService = new RAGService(chromaDbUrl);
+    }
 
     // Initialize DiagnosticsClient
     this.diagnosticsClient = new DiagnosticsClient(this.foundryClient);
@@ -116,15 +138,17 @@ class FoundryMCPServer {
           args || {},
           this.foundryClient,
           this.diagnosticsClient,
-          this.diagnosticSystem
+          this.diagnosticSystem,
+          this.wfrp4eClient,
+          this.ragService
         );
       } catch (error) {
         logger.error('Tool execution failed:', error);
-        
+
         if (error instanceof McpError) {
           throw error;
         }
-        
+
         throw new McpError(
           ErrorCode.InternalError,
           `Tool execution failed: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -160,9 +184,30 @@ class FoundryMCPServer {
    */
   async start(): Promise<void> {
     try {
-      // Connect to FoundryVTT
+      // Connect to FoundryVTT via standard client
       await this.foundryClient.connect();
       logger.info('Connected to FoundryVTT successfully');
+
+      // Test WFRP4e relay connection if enabled
+      if (this.wfrp4eClient) {
+        const connected = await this.wfrp4eClient.testConnection();
+        if (connected) {
+          logger.info('WFRP4e relay client connected successfully');
+        } else {
+          logger.warn('WFRP4e relay client failed to connect - WFRP4e tools may not work');
+        }
+      }
+
+      // Initialize RAG service if configured
+      if (this.ragService) {
+        try {
+          await this.ragService.initialize();
+          const count = await this.ragService.getDocumentCount();
+          logger.info(`RAG service initialized with ${count} documents`);
+        } catch (ragError) {
+          logger.warn('RAG service failed to initialize - lore tools may not work', { error: ragError });
+        }
+      }
 
       // Start the MCP server
       const transport = new StdioServerTransport();

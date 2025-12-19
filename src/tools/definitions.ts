@@ -1,9 +1,12 @@
 /**
  * @fileoverview Tool definitions for FoundryVTT MCP Server
- * 
+ *
  * This module contains all tool schema definitions organized by category.
  * Tools are separated into logical groups for better maintainability.
  */
+
+import { getWFRP4eTools } from './wfrp4e-definitions.js';
+import { getRAGTools } from './rag-definitions.js';
 
 /**
  * Dice rolling tool definitions
@@ -284,6 +287,8 @@ export function getAllTools() {
     ...sceneTools,
     ...generationTools,
     ...diagnosticsTools,
+    ...getWFRP4eTools(),
+    ...getRAGTools(),
   ];
 }
 

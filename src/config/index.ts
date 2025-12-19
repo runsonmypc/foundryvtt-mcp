@@ -53,6 +53,8 @@ const ConfigSchema = z.object({
         'URL validation failed'
       ),
     apiKey: z.string().optional(),
+    clientId: z.string().optional(),
+    useRestModule: z.boolean().default(false),
     username: z.string().optional(),
     password: z.string().optional(),
     socketPath: z.string().default('/socket.io/'),
@@ -102,6 +104,8 @@ function loadConfig(): Config {
     foundry: {
       url: process.env.FOUNDRY_URL,
       apiKey: process.env.FOUNDRY_API_KEY,
+      clientId: process.env.FOUNDRY_CLIENT_ID,
+      useRestModule: process.env.USE_REST_MODULE !== undefined ? process.env.USE_REST_MODULE === 'true' : undefined,
       username: process.env.FOUNDRY_USERNAME,
       password: process.env.FOUNDRY_PASSWORD,
       socketPath: process.env.FOUNDRY_SOCKET_PATH,

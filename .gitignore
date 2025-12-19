@@ -105,3 +105,4 @@ data/
 # Test files
 test-results/
 playwright-report/
+.venv/ cat .gitignore

@@ -1,17 +1,21 @@
 /**
  * @fileoverview Tool routing and handler coordination
- * 
+ *
  * This module routes tool requests to appropriate handlers and manages
  * the coordination between different tool categories.
  */
 
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import { FoundryClient } from '../foundry/client.js';
+import { WFRP4eClient } from '../foundry/wfrp4e-client.js';
 import { DiagnosticsClient } from '../diagnostics/client.js';
 import { DiagnosticSystem } from '../utils/diagnostics.js';
+import { RAGService } from '../rag/index.js';
 import { logger } from '../utils/logger.js';
 import { toolRegistry } from './registry.js';
 import { ToolContext } from './base.js';
+import { handleWFRP4eTool, isWFRP4eTool } from './wfrp4e-handlers.js';
+import { handleRAGTool, isRAGTool } from './rag-handlers.js';
 
 // Import all tool handlers
 import { handleRollDice } from './handlers/dice.js';
@@ -36,9 +40,33 @@ export async function routeToolRequest(
   args: Record<string, unknown>,
   foundryClient: FoundryClient,
   diagnosticsClient: DiagnosticsClient,
-  diagnosticSystem: DiagnosticSystem
+  diagnosticSystem: DiagnosticSystem,
+  wfrp4eClient?: WFRP4eClient,
+  ragService?: RAGService
 ) {
   logger.debug(`Routing tool request: ${name}`, { args });
+
+  // Handle WFRP4e tools if client is available
+  if (isWFRP4eTool(name)) {
+    if (!wfrp4eClient) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        'WFRP4e tools require REST API module to be enabled. Set USE_REST_MODULE=true'
+      );
+    }
+    return handleWFRP4eTool(wfrp4eClient, name, args);
+  }
+
+  // Handle RAG tools if service is available
+  if (isRAGTool(name)) {
+    if (!ragService) {
+      throw new McpError(
+        ErrorCode.InvalidRequest,
+        'RAG tools require ChromaDB to be configured. Set CHROMADB_URL in .env'
+      );
+    }
+    return handleRAGTool(ragService, name, args);
+  }
 
   // Try the new registry system first
   if (toolRegistry.has(name)) {
@@ -47,7 +75,7 @@ export async function routeToolRequest(
       diagnosticsClient,
       diagnosticSystem,
     };
-    
+
     try {
       return await toolRegistry.execute(name, args, context);
     } catch (error) {
